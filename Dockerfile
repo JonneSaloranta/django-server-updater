@@ -11,7 +11,7 @@ WORKDIR /app/content
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc && \
-    apt-get upgrade -y &&
+    apt-get upgrade -y
 
 # Install Python dependencies
 COPY requirements.txt .
