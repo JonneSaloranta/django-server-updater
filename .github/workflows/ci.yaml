@@ -49,7 +49,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/$${{ env.IMAGE_NAME_LOWER }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.IMAGE_NAME_LOWER }}:latest
 
       - name: Deploy with Portainer API
         run: |
@@ -61,55 +61,55 @@ jobs:
 
           # Get the endpoint ID
           ENDPOINT_ID=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
-              "$${{ env.PORTAINER_URL }}/api/endpoints" | jq -r .[0].Id)
+              "${{ env.PORTAINER_URL }}/api/endpoints" | jq -r .[0].Id)
 
-          if [ -z "$${ENDPOINT_ID}" ]; then
+          if [ -z "${ENDPOINT_ID}" ]; then
             echo "Error: Failed to get the endpoint ID."
             exit 1
           fi
 
           # Check if stack exists
           STACK_ID=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
-              "$${{ env.PORTAINER_URL }}/api/stacks" | jq -r ".[] | select(.Name==\"${{ env.STACK_NAME }}\") | .Id")
+              "${{ env.PORTAINER_URL }}/api/stacks" | jq -r ".[] | select(.Name==\"${{ env.STACK_NAME }}\") | .Id")
 
           # Prepare the stack file content
-          STACK_FILE_CONTENT=$(cat $${{ env.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          STACK_FILE_CONTENT=$(cat ${{ env.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
 
           # Deploy or update the stack
-          if [ -z "$${STACK_ID}" ]; then
+          if [ -z "${STACK_ID}" ]; then
             # Create stack
             RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
                 -H "Content-Type: application/json" \
                 --data-binary @<(cat <<EOF
                 {
-                  "Name": "$${{ env.STACK_NAME }}",
-                  "EndpointId": $${ENDPOINT_ID},
+                  "Name": "${{ env.STACK_NAME }}",
+                  "EndpointId": ${ENDPOINT_ID},
                   "SwarmID": "",
-                  "StackFileContent": "$${STACK_FILE_CONTENT}",
+                  "StackFileContent": "${STACK_FILE_CONTENT}",
                   "Env": [
                     {
                       "name": "SECRET_KEY",
-                      "value": "$${{ env.SECRET_KEY }}"
+                      "value": "${{ env.SECRET_KEY }}"
                     },
                     {
                       "name": "DEBUG",
-                      "value": "$${{ env.DEBUG }}"
+                      "value": "${{ env.DEBUG }}"
                     },
                     {
                       "name": "ALLOWED_HOSTS",
-                      "value": "$${{ env.ALLOWED_HOSTS }}"
+                      "value": "${{ env.ALLOWED_HOSTS }}"
                     },
                     {
                       "name": "TIME_ZONE",
-                      "value": "$${{ env.TIME_ZONE }}"
+                      "value": "${{ env.TIME_ZONE }}"
                     }
                   ]
                 }
               EOF
                 ) \
-                "$${{ env.PORTAINER_URL }}/api/stacks?method=string&endpointId=$${ENDPOINT_ID}")
+                "${{ env.PORTAINER_URL }}/api/stacks?method=string&endpointId=${ENDPOINT_ID}")
 
-            if [ "$${RESPONSE}" -ne 200 ]; then
+            if [ "${RESPONSE}" -ne 200 ]; then
               echo "Error: Failed to create the stack."
               cat response.json
               exit 1
@@ -120,31 +120,31 @@ jobs:
                 -H "Content-Type: application/json" \
                 --data-binary @<(cat <<EOF
                 {
-                  "StackFileContent": "$${STACK_FILE_CONTENT}",
+                  "StackFileContent": "${STACK_FILE_CONTENT}",
                   "Env": [
                     {
                       "name": "SECRET_KEY",
-                      "value": "$${{ env.SECRET_KEY }}"
+                      "value": "${{ env.SECRET_KEY }}"
                     },
                     {
                       "name": "DEBUG",
-                      "value": "$${{ env.DEBUG }}"
+                      "value": "${{ env.DEBUG }}"
                     },
                     {
                       "name": "ALLOWED_HOSTS",
-                      "value": "$${{ env.ALLOWED_HOSTS }}"
+                      "value": "${{ env.ALLOWED_HOSTS }}"
                     },
                     {
                       "name": "TIME_ZONE",
-                      "value": "$${{ env.TIME_ZONE }}"
+                      "value": "${{ env.TIME_ZONE }}"
                     }
                   ]
                 }
           EOF
                 ) \
-                "$${{ env.PORTAINER_URL }}/api/stacks/$${STACK_ID}/update?endpointId=$${ENDPOINT_ID}")
+                "${{ env.PORTAINER_URL }}/api/stacks/${STACK_ID}/update?endpointId=${ENDPOINT_ID}")
 
-            if [ "$${RESPONSE}" -ne 200 ]; then
+            if [ "${RESPONSE}" -ne 200 ]; then
               echo "Error: Failed to update the stack."
               cat response.json
               exit 1
