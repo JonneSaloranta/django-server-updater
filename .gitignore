@@ -1,3 +1,6 @@
+# Custom Django
+staticfiles/
+
 # Django #
 *.log
 *.pot
