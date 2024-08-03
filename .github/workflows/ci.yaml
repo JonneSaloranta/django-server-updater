@@ -8,6 +8,11 @@ permissions:
 jobs:
   deploy:
     runs-on: self-hosted
+    env:
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DEBUG: ${{ secrets.DEBUG }}
+      ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
+      TIME_ZONE: ${{ secrets.TIME_ZONE }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
