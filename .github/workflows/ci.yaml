@@ -24,6 +24,6 @@ jobs:
           path: .cache
       - run: pip install -r requirements.txt
       - run: python3 manage.py test
-      # - run: manage.py collectstatic
-      # - run: manage.py migrate
-      # - run: manage.py runserver
+      - run: python3 manage.py collectstatic
+      - run: python3 manage.py migrate
+      - run: python3 manage.py runserver
