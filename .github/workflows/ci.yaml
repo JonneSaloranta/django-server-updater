@@ -1,10 +1,13 @@
-name: ci
+name: CI/CD
+
 on:
   push:
     branches:
       - main
+
 permissions:
   contents: write
+
 jobs:
   deploy:
     runs-on: self-hosted
@@ -13,17 +16,129 @@ jobs:
       DEBUG: ${{ secrets.DEBUG }}
       ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
       TIME_ZONE: ${{ secrets.TIME_ZONE }}
+      REGISTRY: ghcr.io
+      IMAGE_NAME: test-server
+      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+      PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+      STACK_NAME: test-server
+      STACK_FILE: docker-compose.yml
+
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          python-version: "3.x"
-      - uses: actions/cache@v2
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
         with:
-          key: ${{ github.ref }}
-          path: .cache
-      - run: pip install -r requirements.txt
-      - run: python3 manage.py test
-      # - run: python3 manage.py collectstatic
-      # - run: python3 manage.py migrate
-      # - run: python3 manage.py runserver 0.0.0.0:8000
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Deploy with Portainer API
+        run: |
+          # Ensure jq is installed
+          if ! command -v jq &> /dev/null; then
+            echo "jq could not be found, installing..."
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          # Get the endpoint ID
+          ENDPOINT_ID=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+              "$${{ env.PORTAINER_URL }}/api/endpoints" | jq -r .[0].Id)
+
+          if [ -z "$${ENDPOINT_ID}" ]; then
+            echo "Error: Failed to get the endpoint ID."
+            exit 1
+          fi
+
+          # Check if stack exists
+          STACK_ID=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+              "$${{ env.PORTAINER_URL }}/api/stacks" | jq -r ".[] | select(.Name==\"${{ env.STACK_NAME }}\") | .Id")
+
+          # Prepare the stack file content
+          STACK_FILE_CONTENT=$(cat $${{ env.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+
+          # Deploy or update the stack
+          if [ -z "$${STACK_ID}" ]; then
+            # Create stack
+            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                --data-binary @<(cat <<EOF
+                {
+                  "Name": "$${{ env.STACK_NAME }}",
+                  "EndpointId": $${ENDPOINT_ID},
+                  "SwarmID": "",
+                  "StackFileContent": "$${STACK_FILE_CONTENT}",
+                  "Env": [
+                    {
+                      "name": "SECRET_KEY",
+                      "value": "$${{ env.SECRET_KEY }}"
+                    },
+                    {
+                      "name": "DEBUG",
+                      "value": "$${{ env.DEBUG }}"
+                    },
+                    {
+                      "name": "ALLOWED_HOSTS",
+                      "value": "$${{ env.ALLOWED_HOSTS }}"
+                    },
+                    {
+                      "name": "TIME_ZONE",
+                      "value": "$${{ env.TIME_ZONE }}"
+                    }
+                  ]
+                }
+              EOF
+                ) \
+                "$${{ env.PORTAINER_URL }}/api/stacks?method=string&endpointId=$${ENDPOINT_ID}")
+
+            if [ "$${RESPONSE}" -ne 200 ]; then
+              echo "Error: Failed to create the stack."
+              cat response.json
+              exit 1
+            fi
+          else
+            # Update stack
+            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                --data-binary @<(cat <<EOF
+                {
+                  "StackFileContent": "$${STACK_FILE_CONTENT}",
+                  "Env": [
+                    {
+                      "name": "SECRET_KEY",
+                      "value": "$${{ env.SECRET_KEY }}"
+                    },
+                    {
+                      "name": "DEBUG",
+                      "value": "$${{ env.DEBUG }}"
+                    },
+                    {
+                      "name": "ALLOWED_HOSTS",
+                      "value": "$${{ env.ALLOWED_HOSTS }}"
+                    },
+                    {
+                      "name": "TIME_ZONE",
+                      "value": "$${{ env.TIME_ZONE }}"
+                    }
+                  ]
+                }
+          EOF
+                ) \
+                "$${{ env.PORTAINER_URL }}/api/stacks/$${STACK_ID}/update?endpointId=$${ENDPOINT_ID}")
+
+            if [ "$${RESPONSE}" -ne 200 ]; then
+              echo "Error: Failed to update the stack."
+              cat response.json
+              exit 1
+            fi
+          fi
