@@ -7,42 +7,33 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: test-server
-      STACK_NAME: test-server
-      STACK_FILE: docker-compose.yml
-      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
-      PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       DEBUG: ${{ secrets.DEBUG }}
       ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
       TIME_ZONE: ${{ secrets.TIME_ZONE }}
-      REPO_OWNER: ${{ github.repository_owner }}
+      REGISTRY: ghcr.io
+      IMAGE_NAME: test-server
+      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+      PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+      STACK_NAME: test-server
+      STACK_FILE: docker-compose.yml
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up environment variables
-        id: set-env
-        run: |
-          # Convert GitHub repository owner to lowercase and set it as an environment variable
-          echo "REPO_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-          # Ensure IMAGE_NAME is lowercase and set it as an environment variable
-          echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.REPO_OWNER }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
@@ -50,7 +41,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.IMAGE_NAME_LOWER }}:latest
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/test-server:latest
 
       - name: Deploy with Portainer API
         run: |
@@ -61,8 +52,8 @@ jobs:
           fi
 
           # Debug endpoint API response
-          RESPONSE=$(curl -s -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-              "$${{ secrets.PORTAINER_URL }}/api/endpoints")
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+              "$${{ env.PORTAINER_URL }}/api/endpoints")
 
           echo "$${RESPONSE}" > endpoints.json
           cat endpoints.json
@@ -81,8 +72,8 @@ jobs:
           fi
 
           # Debug stacks API response
-          RESPONSE=$(curl -s -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-              "$${{ secrets.PORTAINER_URL }}/api/stacks")
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
+              "$${{ env.PORTAINER_URL }}/api/stacks")
 
           echo "$${RESPONSE}" > stacks.json
           cat stacks.json
@@ -96,41 +87,41 @@ jobs:
           STACK_ID=$(echo "$${RESPONSE}" | jq -r '.[] | select(.Name=="test-server") | .Id')
 
           # Prepare the stack file content
-          STACK_FILE_CONTENT=$(cat $${{ secrets.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          STACK_FILE_CONTENT=$(cat $${{ env.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
 
           # Deploy or update the stack
           if [ -z "$${STACK_ID}" ]; then
             # Create stack
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
+            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
                 -H "Content-Type: application/json" \
                 --data-binary @<(cat <<EOF
                 {
-                  "Name": "test-server",
+                  "Name": "$${{ env.STACK_NAME }}",
                   "EndpointId": $${ENDPOINT_ID},
                   "SwarmID": "",
                   "StackFileContent": "$${STACK_FILE_CONTENT}",
                   "Env": [
                     {
                       "name": "SECRET_KEY",
-                      "value": "$${{ secrets.SECRET_KEY }}"
+                      "value": "$${{ env.SECRET_KEY }}"
                     },
                     {
                       "name": "DEBUG",
-                      "value": "$${{ secrets.DEBUG }}"
+                      "value": "$${{ env.DEBUG }}"
                     },
                     {
                       "name": "ALLOWED_HOSTS",
-                      "value": "$${{ secrets.ALLOWED_HOSTS }}"
+                      "value": "$${{ env.ALLOWED_HOSTS }}"
                     },
                     {
                       "name": "TIME_ZONE",
-                      "value": "$${{ secrets.TIME_ZONE }}"
+                      "value": "$${{ env.TIME_ZONE }}"
                     }
                   ]
                 }
               EOF
                 ) \
-                "$${{ secrets.PORTAINER_URL }}/api/stacks?method=string&endpointId=$${ENDPOINT_ID}")
+                "$${{ env.PORTAINER_URL }}/api/stacks?method=string&endpointId=$${ENDPOINT_ID}")
 
             if [ "$${RESPONSE}" -ne 200 ]; then
               echo "Error: Failed to create the stack."
@@ -139,7 +130,7 @@ jobs:
             fi
           else
             # Update stack
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
+            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer ${{ env.PORTAINER_API_KEY }}" \
                 -H "Content-Type: application/json" \
                 --data-binary @<(cat <<EOF
                 {
@@ -147,25 +138,25 @@ jobs:
                   "Env": [
                     {
                       "name": "SECRET_KEY",
-                      "value": "$${{ secrets.SECRET_KEY }}"
+                      "value": "$${{ env.SECRET_KEY }}"
                     },
                     {
                       "name": "DEBUG",
-                      "value": "$${{ secrets.DEBUG }}"
+                      "value": "$${{ env.DEBUG }}"
                     },
                     {
                       "name": "ALLOWED_HOSTS",
-                      "value": "$${{ secrets.ALLOWED_HOSTS }}"
+                      "value": "$${{ env.ALLOWED_HOSTS }}"
                     },
                     {
                       "name": "TIME_ZONE",
-                      "value": "$${{ secrets.TIME_ZONE }}"
+                      "value": "$${{ env.TIME_ZONE }}"
                     }
                   ]
                 }
           EOF
                 ) \
-                "$${{ secrets.PORTAINER_URL }}/api/stacks/$${STACK_ID}/update?endpointId=$${ENDPOINT_ID}")
+                "$${{ env.PORTAINER_URL }}/api/stacks/$${STACK_ID}/update?endpointId=$${ENDPOINT_ID}")
 
             if [ "$${RESPONSE}" -ne 200 ]; then
               echo "Error: Failed to update the stack."
