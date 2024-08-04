@@ -54,123 +54,84 @@ jobs:
 
       - name: Deploy with Portainer API
         run: |
-          # Ensure jq is installed
+          # Install jq if it's not already installed
           if ! command -v jq &> /dev/null; then
-            echo "jq could not be found, installing..."
+            echo "jq not found. Installing..."
             sudo apt-get update && sudo apt-get install -y jq
           fi
 
-          # Debug endpoint API response
-          RESPONSE=$(curl -s -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-              "$${{ secrets.PORTAINER_URL }}/api/endpoints")
+          # Function to handle API requests
+          api_request() {
+            local method=$1
+            local url=$2
+            local data=$3
+            curl -s -H "Authorization: Bearer ${{ secrets.PORTAINER_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -X $method \
+                --data-binary "$data" \
+                "$url"
+          }
 
-          echo "$${RESPONSE}" > endpoints.json
+          # Debug and check endpoint API
+          RESPONSE=$(api_request GET "${{ secrets.PORTAINER_URL }}/api/endpoints")
+          echo "$RESPONSE" > endpoints.json
           cat endpoints.json
 
-          if echo "$${RESPONSE}" | grep -q "Unauthorized"; then
-            echo "Authorization error with Portainer API. Check API key and permissions."
+          if echo "$RESPONSE" | grep -q "Unauthorized"; then
+            echo "Authorization error with Portainer API."
             exit 1
           fi
 
-          # Extract the endpoint ID
-          ENDPOINT_ID=$(echo "$${RESPONSE}" | jq -r '.[] | .Id')
-
-          if [ -z "$${ENDPOINT_ID}" ]; then
-            echo "Error: Failed to get the endpoint ID."
+          ENDPOINT_ID=$(echo "$RESPONSE" | jq -r '.[] | .Id')
+          if [ -z "$ENDPOINT_ID" ]; then
+            echo "Failed to get endpoint ID."
             exit 1
           fi
 
-          # Debug stacks API response
-          RESPONSE=$(curl -s -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-              "$${{ secrets.PORTAINER_URL }}/api/stacks")
-
-          echo "$${RESPONSE}" > stacks.json
+          # Check stacks API
+          RESPONSE=$(api_request GET "${{ secrets.PORTAINER_URL }}/api/stacks")
+          echo "$RESPONSE" > stacks.json
           cat stacks.json
 
-          if echo "$${RESPONSE}" | grep -q "Unauthorized"; then
-            echo "Authorization error with Portainer API. Check API key and permissions."
+          if echo "$RESPONSE" | grep -q "Unauthorized"; then
+            echo "Authorization error with Portainer API."
             exit 1
           fi
 
-          # Check if stack exists
-          STACK_ID=$(echo "$${RESPONSE}" | jq -r '.[] | select(.Name=="test-server") | .Id')
+          STACK_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.Name=="test-server") | .Id')
 
-          # Prepare the stack file content
-          STACK_FILE_CONTENT=$(cat $${{ secrets.STACK_FILE }} | sed 's/\\/\\\\/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          # Prepare stack file content
+          STACK_FILE_CONTENT=$(sed 's/\\/\\\\/g; :a;N;$!ba;s/\n/\\n/g' < ${{ secrets.STACK_FILE }})
 
-          # Deploy or update the stack
-          if [ -z "$${STACK_ID}" ]; then
-            # Create stack
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-                -H "Content-Type: application/json" \
-                --data-binary @<(cat <<EOF
-                {
-                  "Name": "test-server",
-                  "EndpointId": $${ENDPOINT_ID},
-                  "SwarmID": "",
-                  "StackFileContent": "$${STACK_FILE_CONTENT}",
-                  "Env": [
-                    {
-                      "name": "SECRET_KEY",
-                      "value": "$${{ secrets.SECRET_KEY }}"
-                    },
-                    {
-                      "name": "DEBUG",
-                      "value": "$${{ secrets.DEBUG }}"
-                    },
-                    {
-                      "name": "ALLOWED_HOSTS",
-                      "value": "$${{ secrets.ALLOWED_HOSTS }}"
-                    },
-                    {
-                      "name": "TIME_ZONE",
-                      "value": "$${{ secrets.TIME_ZONE }}"
-                    }
-                  ]
-                }
-              EOF
-                ) \
-                "$${{ secrets.PORTAINER_URL }}/api/stacks?method=string&endpointId=$${ENDPOINT_ID}")
+          # Deploy or update stack
+          DATA=$(jq -n \
+            --arg name "test-server" \
+            --arg endpoint_id "$ENDPOINT_ID" \
+            --arg stack_file_content "$STACK_FILE_CONTENT" \
+            --arg secret_key "${{ secrets.SECRET_KEY }}" \
+            --arg debug "${{ secrets.DEBUG }}" \
+            --arg allowed_hosts "${{ secrets.ALLOWED_HOSTS }}" \
+            --arg time_zone "${{ secrets.TIME_ZONE }}" \
+            '{
+              Name: $name,
+              EndpointId: $endpoint_id,
+              StackFileContent: $stack_file_content,
+              Env: [
+                { name: "SECRET_KEY", value: $secret_key },
+                { name: "DEBUG", value: $debug },
+                { name: "ALLOWED_HOSTS", value: $allowed_hosts },
+                { name: "TIME_ZONE", value: $time_zone }
+              ]
+            }')
 
-            if [ "$${RESPONSE}" -ne 200 ]; then
-              echo "Error: Failed to create the stack."
-              cat response.json
-              exit 1
-            fi
+          if [ -z "$STACK_ID" ]; then
+            RESPONSE=$(api_request POST "${{ secrets.PORTAINER_URL }}/api/stacks?method=string&endpointId=$ENDPOINT_ID" "$DATA")
           else
-            # Update stack
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X PUT -H "Authorization: Bearer $${{ secrets.PORTAINER_API_KEY }}" \
-                -H "Content-Type: application/json" \
-                --data-binary @<(cat <<EOF
-                {
-                  "StackFileContent": "$${STACK_FILE_CONTENT}",
-                  "Env": [
-                    {
-                      "name": "SECRET_KEY",
-                      "value": "$${{ secrets.SECRET_KEY }}"
-                    },
-                    {
-                      "name": "DEBUG",
-                      "value": "$${{ secrets.DEBUG }}"
-                    },
-                    {
-                      "name": "ALLOWED_HOSTS",
-                      "value": "$${{ secrets.ALLOWED_HOSTS }}"
-                    },
-                    {
-                      "name": "TIME_ZONE",
-                      "value": "$${{ secrets.TIME_ZONE }}"
-                    }
-                  ]
-                }
-          EOF
-                ) \
-                "$${{ secrets.PORTAINER_URL }}/api/stacks/$${STACK_ID}/update?endpointId=$${ENDPOINT_ID}")
-
-            if [ "$${RESPONSE}" -ne 200 ]; then
-              echo "Error: Failed to update the stack."
-              cat response.json
-              exit 1
-            fi
+            RESPONSE=$(api_request PUT "${{ secrets.PORTAINER_URL }}/api/stacks/$STACK_ID/update?endpointId=$ENDPOINT_ID" "$DATA")
           fi
-        # shell: /usr/bin/bash -e {0}
+
+          if [ "$(echo "$RESPONSE" | jq -r '.code')" -ne 200 ]; then
+            echo "Failed to deploy/update the stack."
+            echo "$RESPONSE"
+            exit 1
+          fi
