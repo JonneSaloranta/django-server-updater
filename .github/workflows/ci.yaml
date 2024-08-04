@@ -66,10 +66,8 @@ jobs:
 
       - name: Generate Release Notes
         id: generate_release_notes
-        uses: docker://ghcr.io/github/release-notes-generator/release-notes-generator:latest
-        with:
-          configuration-path: .github/release-notes.yml
-          output-file: release-notes.md
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace ghcr.io/github/release-notes-generator/release-notes-generator:latest --configuration-path /workspace/.github/release-notes.yml --output-file /workspace/release-notes.md
 
       - name: Upload Release Notes
         uses: actions/upload-artifact@v2
