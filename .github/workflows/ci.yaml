@@ -11,18 +11,12 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: test-server
       STACK_NAME: test-server
       STACK_FILE: docker-compose.yml
-      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
-      PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      DEBUG: ${{ secrets.DEBUG }}
-      ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
-      TIME_ZONE: ${{ secrets.TIME_ZONE }}
       REPO_OWNER: ${{ github.repository_owner }}
 
     steps:
@@ -52,86 +46,33 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/${{ env.IMAGE_NAME_LOWER }}:latest
 
-      - name: Deploy with Portainer API
-        run: |
-          # Install jq if it's not already installed
-          if ! command -v jq &> /dev/null; then
-            echo "jq not found. Installing..."
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
+  create_release:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-          # Function to handle API requests
-          api_request() {
-            local method=$1
-            local url=$2
-            local data=$3
-            curl -s -H "Authorization: Bearer ${{ secrets.PORTAINER_API_KEY }}" \
-                -H "Content-Type: application/json" \
-                -X $method \
-                --data-binary "$data" \
-                "$url"
-          }
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release ${{ github.run_number }}
+          draft: false
+          prerelease: false
 
-          # Debug and check endpoint API
-          RESPONSE=$(api_request GET "${{ secrets.PORTAINER_URL }}/api/endpoints")
-          echo "$RESPONSE" > endpoints.json
-          cat endpoints.json
+      - name: Generate Release Notes
+        id: generate_release_notes
+        uses: docker://ghcr.io/github/release-notes-generator/release-notes-generator:latest
+        with:
+          configuration-path: .github/release-notes.yml
+          output-file: release-notes.md
 
-          if echo "$RESPONSE" | grep -q "Unauthorized"; then
-            echo "Authorization error with Portainer API."
-            exit 1
-          fi
-
-          ENDPOINT_ID=$(echo "$RESPONSE" | jq -r '.[] | .Id')
-          if [ -z "$ENDPOINT_ID" ]; then
-            echo "Failed to get endpoint ID."
-            exit 1
-          fi
-
-          # Check stacks API
-          RESPONSE=$(api_request GET "${{ secrets.PORTAINER_URL }}/api/stacks")
-          echo "$RESPONSE" > stacks.json
-          cat stacks.json
-
-          if echo "$RESPONSE" | grep -q "Unauthorized"; then
-            echo "Authorization error with Portainer API."
-            exit 1
-          fi
-
-          STACK_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.Name=="test-server") | .Id')
-
-          # Prepare stack file content
-          STACK_FILE_CONTENT=$(sed 's/\\/\\\\/g; :a;N;$!ba;s/\n/\\n/g' < ${{ secrets.STACK_FILE }})
-
-          # Deploy or update stack
-          DATA=$(jq -n \
-            --arg name "test-server" \
-            --arg endpoint_id "$ENDPOINT_ID" \
-            --arg stack_file_content "$STACK_FILE_CONTENT" \
-            --arg secret_key "${{ secrets.SECRET_KEY }}" \
-            --arg debug "${{ secrets.DEBUG }}" \
-            --arg allowed_hosts "${{ secrets.ALLOWED_HOSTS }}" \
-            --arg time_zone "${{ secrets.TIME_ZONE }}" \
-            '{
-              Name: $name,
-              EndpointId: $endpoint_id,
-              StackFileContent: $stack_file_content,
-              Env: [
-                { name: "SECRET_KEY", value: $secret_key },
-                { name: "DEBUG", value: $debug },
-                { name: "ALLOWED_HOSTS", value: $allowed_hosts },
-                { name: "TIME_ZONE", value: $time_zone }
-              ]
-            }')
-
-          if [ -z "$STACK_ID" ]; then
-            RESPONSE=$(api_request POST "${{ secrets.PORTAINER_URL }}/api/stacks?method=string&endpointId=$ENDPOINT_ID" "$DATA")
-          else
-            RESPONSE=$(api_request PUT "${{ secrets.PORTAINER_URL }}/api/stacks/$STACK_ID/update?endpointId=$ENDPOINT_ID" "$DATA")
-          fi
-
-          if [ "$(echo "$RESPONSE" | jq -r '.code')" -ne 200 ]; then
-            echo "Failed to deploy/update the stack."
-            echo "$RESPONSE"
-            exit 1
-          fi
+      - name: Upload Release Notes
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-notes
+          path: release-notes.md
