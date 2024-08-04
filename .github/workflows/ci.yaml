@@ -11,7 +11,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: django-app
+  IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
   SECRET_KEY: ${{ secrets.SECRET_KEY }}
   DEBUG: ${{ secrets.DEBUG }}
   ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
@@ -52,7 +52,7 @@ jobs:
           echo "REPO_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
           # Ensure IMAGE_NAME is lowercase and set it as an environment variable
-          echo "IMAGE_NAME_LOWER=$(echo '${{ secret.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
