@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'ansible_control.apps.AnsibleControlConfig',
     'website.apps.WebsiteConfig',
     'tailwind',
+    'theme',
 ]
 
 MIDDLEWARE = [
