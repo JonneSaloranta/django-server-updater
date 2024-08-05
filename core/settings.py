@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'ansible_control.apps.AnsibleControlConfig',
     'website.apps.WebsiteConfig',
+    'tailwind',
 ]
 
 MIDDLEWARE = [
