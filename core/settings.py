@@ -29,6 +29,12 @@ DEBUG = decouple.config('DEBUG', cast=bool)
 
 ALLOWED_HOSTS = decouple.config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
 
+INTERNAL_IPS = [
+    '127.0.0.1',
+]
+
+NPM_BIN_PATH = decouple.config('NPM_BIN_PATH')
+
 
 # Application definition
 
@@ -44,6 +50,8 @@ INSTALLED_APPS = [
     'tailwind',
     'theme',
 ]
+
+TAILWIND_APP_NAME = 'theme'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
