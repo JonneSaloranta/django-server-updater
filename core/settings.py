@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'ansible_control.apps.AnsibleControlConfig',
     'website.apps.WebsiteConfig',
     'shop.apps.ShopConfig',
+    'dynamic_breadcrumbs'
 ]
 
 MIDDLEWARE = [
@@ -71,6 +72,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'website.context_processors.contact_email',
                 # 'shop.context_processors.contact_email',
+                'dynamic_breadcrumbs.context_processors.breadcrumbs',
             ],
         },
     },
@@ -142,3 +144,5 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# DYNAMIC_BREADCRUMBS_SHOW_AT_BASE_PATH = True
