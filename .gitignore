@@ -1,5 +1,6 @@
 # Custom Django
 staticfiles/
+migrations/
 
 # Django #
 *.log
